@@ -1390,6 +1390,14 @@ AssertionResult EqFailure(const char* lhs_expression,
   return AssertionFailure() << msg;
 }
 
+AssertionResult EqSuccessWithDetails(const char* /*expected_expression*/,
+	const char* /*actual_expression*/,
+	const std::string& /*expected_value*/,
+	const std::string& /*actual_value*/,
+	bool /*ignoring_case*/)
+{
+	return AssertionSuccess();
+}
 // Constructs a failure message for Boolean assertions such as EXPECT_TRUE.
 std::string GetBoolAssertionFailureMessage(
     const AssertionResult& assertion_result,
@@ -4287,6 +4295,275 @@ std::string JsonUnitTestResultPrinter::TestPropertiesAsJson(
 
 // End JsonUnitTestResultPrinter
 
+class MarkdownUnitTestResultPrinter : public EmptyTestEventListener {
+public:
+	explicit MarkdownUnitTestResultPrinter(const char* output_file);
+
+	virtual void OnTestIterationEnd(const UnitTest& unit_test, int iteration);
+
+	// Prints an JSON summary of all unit tests.
+	static void PrintMdTestList(::std::ostream* stream,
+		const std::vector<TestCase*>& test_cases);
+
+private:
+	// Returns an JSON-escaped copy of the input string str.
+	static std::string EscapeMd(const std::string& str);
+
+	static void OutputMdTableHeader(std::ostream* stream,
+		const std::string& name = "Measure of",
+		const std::string& value = "Value");
+
+	//// Verifies that the given attribute belongs to the given element and
+	//// streams the attribute as JSON.
+	static void OutputMdTableRow(std::ostream* stream,
+		const std::string& name,
+		const std::string& value);
+	static void OutputMdTableRow(std::ostream* stream,
+		const std::string& name,
+		int value);
+
+	// Streams a JSON representation of a TestInfo object.
+	static void OutputMdTestInfo(::std::ostream* stream,
+		const TestInfo& test_info);
+
+	// Prints a JSON representation of a TestCase object
+	static void PrintMdTestCase(::std::ostream* stream,
+		const TestCase& test_case);
+
+	// Prints a JSON summary of unit_test to output stream out.
+	static void PrintMdUnitTest(::std::ostream* stream,
+		const UnitTest& unit_test);
+
+	// Produces a string representing the test properties in a result as
+	// a JSON dictionary.
+	static std::string TestPropertiesAsMd(const TestResult& result);
+
+	// The output file.
+	const std::string output_file_;
+
+	GTEST_DISALLOW_COPY_AND_ASSIGN_(MarkdownUnitTestResultPrinter);
+};
+
+// Creates a new MarkdownUnitTestResultPrinter.
+MarkdownUnitTestResultPrinter::MarkdownUnitTestResultPrinter(
+	const char* output_file)
+	: output_file_(output_file) {
+	if (output_file_.empty()) {
+		GTEST_LOG_(FATAL) << "JSON output file may not be null";
+	}
+}
+
+void MarkdownUnitTestResultPrinter::OnTestIterationEnd(
+	const UnitTest& unit_test, int /*iteration*/) {
+	FILE* jsonout = OpenFileForWriting(output_file_);
+	std::stringstream stream;
+	PrintMdUnitTest(&stream, unit_test);
+	fprintf(jsonout, "%s", StringStreamToString(&stream).c_str());
+	fclose(jsonout);
+}
+
+// Returns an JSON-escaped copy of the input string str.
+std::string MarkdownUnitTestResultPrinter::EscapeMd(const std::string& str) {
+	Message m;
+
+	for (size_t i = 0; i < str.size(); ++i) {
+		const char ch = str[i];
+		switch (ch) {
+		case '\\':
+		case '`':
+		case '*':
+		case '_':
+		case '{':
+		case '}':
+		case '[':
+		case ']':
+		case '(':
+		case ')':
+		case '#':
+		case '+':
+		case '-':
+		case '!':
+		case '.':
+		case '<':
+		case '>':
+			m << '\\' << ch;
+			break;
+		default:
+			m << ch;
+			break;
+		}
+	}
+
+	return m.GetString();
+}
+
+void MarkdownUnitTestResultPrinter::OutputMdTableHeader(
+	std::ostream* stream, const std::string& name, const std::string& value) {
+	*stream << "| " << name << " | " << value << " |\n";
+	*stream << "| --- | --- |\n";
+}
+
+void MarkdownUnitTestResultPrinter::OutputMdTableRow(std::ostream* stream,
+	const std::string& name,
+	const std::string& value) {
+	*stream << "| " << name << " | " << EscapeMd(value) << " |\n";
+}
+
+void MarkdownUnitTestResultPrinter::OutputMdTableRow(std::ostream* stream,
+	const std::string& name,
+	int value) {
+	OutputMdTableRow(stream, name, StreamableToString(value));
+}
+
+// Prints a JSON representation of a TestInfo object.
+void MarkdownUnitTestResultPrinter::OutputMdTestInfo(
+	::std::ostream* stream,
+	const TestInfo& test_info) {
+	const TestResult& result = *test_info.result();
+
+	*stream << "### " <<  EscapeMd(test_info.name()) << "\n";
+
+	OutputMdTableHeader(stream);
+	if (test_info.value_param() != nullptr) {
+		OutputMdTableRow(stream, "value_param",test_info.value_param());
+	}
+
+	if (test_info.type_param() != nullptr) {
+		OutputMdTableRow(stream, "type_param", test_info.type_param());
+	}
+
+	if (GTEST_FLAG(list_tests)) {
+		OutputMdTableRow(stream, "file", test_info.file());
+		OutputMdTableRow(stream, "line", test_info.line());
+		return;
+	}
+
+	OutputMdTableRow(stream, "status",
+		test_info.should_run() ? "RUN" : "NOTRUN");
+	OutputMdTableRow(stream, "time", FormatTimeInMillisAsDuration(result.elapsed_time()));
+	*stream << "\n";
+
+	*stream << TestPropertiesAsMd(result);
+
+	*stream << "| \\# | type | location | message |\n"
+			<< "| -: | :-   | :- | :- |\n";
+	for (int i = 0; i < result.total_part_count(); ++i) {
+		const TestPartResult& part = result.GetTestPartResult(i);
+
+		const std::string location =
+			internal::FormatCompilerIndependentFileLocation(part.file_name(),
+				part.line_number());
+		*stream << "| " << internal::StreamableToString(i+1) <<
+			" | " << TestPartResultTypeToString(part.type()) <<
+			" | `" << location << "` " <<
+			" |\n";
+	}
+
+	*stream << "\n";
+}
+
+// Prints an JSON representation of a TestCase object
+void MarkdownUnitTestResultPrinter::PrintMdTestCase(
+	std::ostream* stream, const TestCase& test_case) {
+
+	*stream << "## " << EscapeMd(test_case.name()) << "\n";
+
+	OutputMdTableHeader(stream);
+	OutputMdTableRow(stream, "tests", test_case.reportable_test_count());
+
+	if (!GTEST_FLAG(list_tests)) {
+		OutputMdTableRow(stream, "failures", test_case.failed_test_count());
+		OutputMdTableRow(stream, "disabled",
+			test_case.reportable_disabled_test_count());
+		OutputMdTableRow(stream, "errors", 0);
+		OutputMdTableRow(stream, "time", FormatTimeInMillisAsDuration(test_case.elapsed_time()));
+		*stream << "\n";
+
+		if (test_case.ad_hoc_test_result().test_property_count() > 0) {
+			*stream << "--- \n";
+			OutputMdTableHeader(stream);
+			*stream << TestPropertiesAsMd(test_case.ad_hoc_test_result()) << "\n";
+		}
+	}
+
+	for (int i = 0; i < test_case.total_test_count(); ++i) {
+		if (test_case.GetTestInfo(i)->is_reportable()) {
+			OutputMdTestInfo(stream, *test_case.GetTestInfo(i));
+		}
+	}
+	*stream << "\n";
+}
+
+// Prints a JSON summary of unit_test to output stream out.
+void MarkdownUnitTestResultPrinter::PrintMdUnitTest(
+	std::ostream* stream, const UnitTest& unit_test) {
+	*stream << "# AllTests\n";
+
+	OutputMdTableHeader(stream);
+	OutputMdTableRow(stream, "tests", unit_test.reportable_test_count());
+	OutputMdTableRow(stream, "failures", unit_test.failed_test_count());
+	OutputMdTableRow(stream, "disabled", unit_test.reportable_disabled_test_count());
+	if (GTEST_FLAG(shuffle)) {
+		OutputMdTableRow(stream, "random_seed", unit_test.random_seed());
+	}
+	OutputMdTableRow(
+		stream, "timestamp",
+		FormatEpochTimeInMillisAsRFC3339(unit_test.start_timestamp()));
+	OutputMdTableRow(stream, "time",
+		FormatTimeInMillisAsDuration(unit_test.elapsed_time()));
+	*stream << "\n";
+
+	if (unit_test.ad_hoc_test_result().test_property_count() > 0){
+		OutputMdTableHeader(stream, "Propertiy Key", "Value");
+		*stream << TestPropertiesAsMd(unit_test.ad_hoc_test_result()) << "\n";
+	}
+
+	for (int i = 0; i < unit_test.total_test_case_count(); ++i) {
+		if (unit_test.GetTestCase(i)->reportable_test_count() > 0) {
+			PrintMdTestCase(stream, *unit_test.GetTestCase(i));
+		}
+	}
+}
+
+void MarkdownUnitTestResultPrinter::PrintMdTestList(
+	std::ostream* stream, const std::vector<TestCase*>& test_cases) {
+	const std::string kTestsuites = "testsuites";
+	const std::string kIndent = Indent(2);
+	*stream << "{\n";
+	int total_tests = 0;
+	for (size_t i = 0; i < test_cases.size(); ++i) {
+		total_tests += test_cases[i]->total_test_count();
+	}
+	OutputMdTableRow(stream, "tests", total_tests);
+
+	OutputMdTableRow(stream, "name", "AllTests");
+	*stream << kIndent << "\"" << kTestsuites << "\": [\n";
+
+	for (size_t i = 0; i < test_cases.size(); ++i) {
+		if (i != 0) {
+			*stream << ",\n";
+		}
+		PrintMdTestCase(stream, *test_cases[i]);
+	}
+
+	*stream << "\n"
+		<< kIndent << "]\n"
+		<< "}\n";
+}
+
+// Produces a string representing the test properties in a result as
+// a JSON dictionary.
+std::string MarkdownUnitTestResultPrinter::TestPropertiesAsMd(
+	const TestResult& result) {
+	Message attributes;
+	for (int i = 0; i < result.test_property_count(); ++i) {
+		const TestProperty& property = result.GetTestProperty(i);
+		attributes
+			<< "| " << property.key() << " | " << EscapeMd(property.value()) << " |\n";
+	}
+	return attributes.GetString();
+}
+
 #if GTEST_CAN_STREAM_RESULTS_
 
 // Checks if str contains '=', '&', '%' or '\n' characters. If yes,
@@ -4984,6 +5261,9 @@ void UnitTestImpl::ConfigureXmlOutput() {
   } else if (output_format == "json") {
     listeners()->SetDefaultXmlGenerator(new JsonUnitTestResultPrinter(
         UnitTestOptions::GetAbsolutePathToOutputFile().c_str()));
+  } else if (output_format == "md") {
+	  listeners()->SetDefaultXmlGenerator(new MarkdownUnitTestResultPrinter(
+		  UnitTestOptions::GetAbsolutePathToOutputFile().c_str()));
   } else if (output_format != "") {
     GTEST_LOG_(WARNING) << "WARNING: unrecognized output format \""
                         << output_format << "\" ignored.";
