@@ -87,7 +87,14 @@ AssertionResult AssertPred1Helper(const char* pred_text,
                                   const char* e1,
                                   Pred pred,
                                   const T1& v1) {
-  if (pred(v1)) return AssertionSuccess();
+  bool result = pred(v1);
+  if (result) {
+	  Message m;
+	  m << pred_text << "(" << e1 << ")";
+	  Message m2;
+	  m2 << pred_text  << "(" << v1 << ")";
+	  return AssertionSuccess(AssertionInfo(m.GetString(), "true", PrintToString(result), m2.GetString()));
+  }
 
   return AssertionFailure() << pred_text << "("
                             << e1 << ") evaluates to false, where"
@@ -131,7 +138,14 @@ AssertionResult AssertPred2Helper(const char* pred_text,
                                   Pred pred,
                                   const T1& v1,
                                   const T2& v2) {
-  if (pred(v1, v2)) return AssertionSuccess();
+	bool result = pred(v1, v2);
+	if (result) {
+		Message m;
+		m << pred_text << "(" << e1 << "," << e2<< ")";
+		Message m2;
+		m2 << pred_text << "(" << v1 << "," << v2 << ")";
+		return AssertionSuccess(AssertionInfo(m.GetString(), "true", PrintToString(result), m2.GetString()));
+	}
 
   return AssertionFailure() << pred_text << "("
                             << e1 << ", "
@@ -182,7 +196,14 @@ AssertionResult AssertPred3Helper(const char* pred_text,
                                   const T1& v1,
                                   const T2& v2,
                                   const T3& v3) {
-  if (pred(v1, v2, v3)) return AssertionSuccess();
+	bool result = pred(v1, v2, v3);
+	if (result) {
+		Message m;
+		m << pred_text << "(" << e1 << "," << e2 << "," << e3 << ")";
+		Message m2;
+		m2 << pred_text << "(" << v1 << "," << v2 << "," << v3 << ")";
+		return AssertionSuccess(AssertionInfo(m.GetString(), "true", PrintToString(result), m2.GetString()));
+	}
 
   return AssertionFailure() << pred_text << "("
                             << e1 << ", "
@@ -240,7 +261,14 @@ AssertionResult AssertPred4Helper(const char* pred_text,
                                   const T2& v2,
                                   const T3& v3,
                                   const T4& v4) {
-  if (pred(v1, v2, v3, v4)) return AssertionSuccess();
+	bool result = pred(v1, v2, v3, v4);
+	if (result) {
+		Message m;
+		m << pred_text << "(" << e1 << "," << e2 << "," << e3 << "," << e4 << ")";
+		Message m2;
+		m2 << pred_text << "(" << v1 << "," << v2 << "," << v3 << "," << v4 << ")";
+		return AssertionSuccess(AssertionInfo(m.GetString(), "true", PrintToString(result), m2.GetString()));
+	}
 
   return AssertionFailure() << pred_text << "("
                             << e1 << ", "
@@ -305,7 +333,14 @@ AssertionResult AssertPred5Helper(const char* pred_text,
                                   const T3& v3,
                                   const T4& v4,
                                   const T5& v5) {
-  if (pred(v1, v2, v3, v4, v5)) return AssertionSuccess();
+	bool result = pred(v1, v2, v3, v4, v5);
+	if (result) {
+		Message m;
+		m << pred_text << "(" << e1 << "," << e2 << "," << e3 << "," << e4 << "," << e5 << ")";
+		Message m2;
+		m2 << pred_text << "(" << v1 << "," << v2 << "," << v3 << "," << v4 << "," << v5 << ")";
+		return AssertionSuccess(AssertionInfo(m.GetString(), "true", PrintToString(result), m2.GetString()));
+	}
 
   return AssertionFailure() << pred_text << "("
                             << e1 << ", "

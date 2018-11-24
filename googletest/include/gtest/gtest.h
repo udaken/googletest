@@ -199,6 +199,42 @@ class TestCase;
 class TestInfo;
 class UnitTest;
 
+struct GTEST_API_ AssertionInfo {
+	const std::string expected_expression_;
+	const std::string actual_expression_;
+	const std::string expected_value_;
+	const std::string actual_value_;
+	const std::string op_;
+
+	AssertionInfo() {}
+
+	explicit AssertionInfo(const std::string& expected_expression, const std::string& actual_expression,
+		const std::string& expected_value,
+		const std::string& actual_value, const std::string& op = "")
+		: expected_expression_(expected_expression), actual_expression_(actual_expression),
+		expected_value_(expected_value), actual_value_(actual_value), op_(op)
+	{
+	}
+	explicit AssertionInfo(const char * expected_expression, const char * actual_expression,
+		const std::string& expected_value,
+		const std::string& actual_value , const char * op = "")
+		: expected_expression_(expected_expression), actual_expression_(actual_expression),
+		expected_value_(expected_value), actual_value_(actual_value), op_(op)
+	{
+	}
+	AssertionInfo(const AssertionInfo &other)
+		: expected_expression_(other.expected_expression_), actual_expression_(other.actual_expression_),
+		expected_value_(other.expected_value_), actual_value_(other.actual_value_), op_(other.op_)
+	{
+	}
+
+	const std::string& expected_expression() const { return expected_expression_; }
+	const std::string& actual_expression() const { return actual_expression_; }
+	const std::string& expected_value() const { return expected_value_; }
+	const std::string& actual_value() const { return actual_value_; }
+	const std::string& op() const { return op_; }
+};
+
 // A class for indicating whether an assertion was successful.  When
 // the assertion wasn't successful, the AssertionResult object
 // remembers a non-empty message that describes how it failed.
@@ -298,10 +334,11 @@ class GTEST_API_ AssertionResult {
   template <typename T>
   explicit AssertionResult(
       const T& success,
+	  const AssertionInfo &ai = AssertionInfo(),
       typename internal::EnableIf<
           !internal::ImplicitlyConvertible<T, AssertionResult>::value>::type*
           /*enabler*/ = NULL)
-      : success_(success) {}
+      : success_(success), assertionInfo_(ai) {}
 
 #if defined(_MSC_VER) && _MSC_VER < 1910
   GTEST_DISABLE_MSC_WARNINGS_POP_()
@@ -362,10 +399,12 @@ class GTEST_API_ AssertionResult {
   // Referenced via a pointer to avoid taking too much stack frame space
   // with test assertions.
   internal::scoped_ptr< ::std::string> message_;
+
+  AssertionInfo assertionInfo_;
 };
 
 // Makes a successful assertion result.
-GTEST_API_ AssertionResult AssertionSuccess();
+GTEST_API_ AssertionResult AssertionSuccess(const AssertionInfo &ai);
 
 // Makes a failed assertion result.
 GTEST_API_ AssertionResult AssertionFailure();
@@ -1442,7 +1481,8 @@ AssertionResult CmpHelperEQ(const char* lhs_expression,
                             const T1& lhs,
                             const T2& rhs) {
   if (lhs == rhs) {
-    return AssertionSuccess();
+    return AssertionSuccess(
+		AssertionInfo(lhs_expression, rhs_expression, PrintToString(lhs), PrintToString(rhs), "EQ"));
   }
 
   return CmpHelperEQFailure(lhs_expression, rhs_expression, lhs, rhs);
@@ -1482,7 +1522,7 @@ class EqHelper {
                                  const char* rhs_expression,
                                  BiggestInt lhs,
                                  BiggestInt rhs) {
-    return CmpHelperEQ(lhs_expression, rhs_expression, lhs, rhs);
+	  return CmpHelperEQ(lhs_expression, rhs_expression, lhs, rhs);
   }
 };
 
@@ -1558,8 +1598,9 @@ AssertionResult CmpHelperOpFailure(const char* expr1, const char* expr2,
 template <typename T1, typename T2>\
 AssertionResult CmpHelper##op_name(const char* expr1, const char* expr2, \
                                    const T1& val1, const T2& val2) {\
-  if (val1 op val2) {\
-    return AssertionSuccess();\
+	printf("before Compare(%s " #op " %s)\n", expr1, expr2); \
+if (val1 op val2) {\
+    return AssertionSuccess(AssertionInfo(expr1, expr2, PrintToString(val1), PrintToString(val2), #op));\
   } else {\
     return CmpHelperOpFailure(expr1, expr2, val1, val2, #op);\
   }\
@@ -1685,17 +1726,17 @@ AssertionResult CmpHelperFloatingPointEQ(const char* lhs_expression,
                                          RawType rhs_value) {
   const FloatingPoint<RawType> lhs(lhs_value), rhs(rhs_value);
 
-  if (lhs.AlmostEquals(rhs)) {
-    return AssertionSuccess();
-  }
-
   ::std::stringstream lhs_ss;
   lhs_ss << std::setprecision(std::numeric_limits<RawType>::digits10 + 2)
-         << lhs_value;
+	  << lhs_value;
 
   ::std::stringstream rhs_ss;
   rhs_ss << std::setprecision(std::numeric_limits<RawType>::digits10 + 2)
-         << rhs_value;
+	  << rhs_value;
+
+  if (lhs.AlmostEquals(rhs)) {
+    return AssertionSuccess(AssertionInfo(lhs_expression, rhs_expression, StringStreamToString(&lhs_ss), StringStreamToString(&rhs_ss), "EQ") );
+  }
 
   return EqFailure(lhs_expression,
                    rhs_expression,

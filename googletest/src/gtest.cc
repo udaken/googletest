@@ -675,7 +675,7 @@ extern const TypeId kTestTypeIdInGoogleTest = GetTestTypeId();
 // This predicate-formatter checks that 'results' contains a test part
 // failure of the given type and that the failure message contains the
 // given substring.
-static AssertionResult HasOneFailure(const char* /* results_expr */,
+static AssertionResult HasOneFailure(const char* results_expr,
                                      const char* /* type_expr */,
                                      const char* /* substr_expr */,
                                      const TestPartResultArray& results,
@@ -708,7 +708,7 @@ static AssertionResult HasOneFailure(const char* /* results_expr */,
                               << r;
   }
 
-  return AssertionSuccess();
+  return AssertionSuccess(AssertionInfo(results_expr, "TODO" ,expected, PrintToString(results.size()) + " failure(s)"));
 }
 
 // The constructor of SingleFailureChecker remembers where to look up
@@ -1032,7 +1032,7 @@ AssertionResult::AssertionResult(const AssertionResult& other)
     : success_(other.success_),
       message_(other.message_.get() != NULL ?
                new ::std::string(*other.message_) :
-               static_cast< ::std::string*>(NULL)) {
+               static_cast< ::std::string*>(NULL)), assertionInfo_(other.assertionInfo_) {
 }
 
 // Swaps two AssertionResults.
@@ -1051,8 +1051,8 @@ AssertionResult AssertionResult::operator!() const {
 }
 
 // Makes a successful assertion result.
-AssertionResult AssertionSuccess() {
-  return AssertionResult(true);
+AssertionResult AssertionSuccess(const AssertionInfo &ai) {
+  return AssertionResult(true, ai);
 }
 
 // Makes a failed assertion result.
@@ -1411,7 +1411,8 @@ AssertionResult DoubleNearPredFormat(const char* expr1,
                                      double val2,
                                      double abs_error) {
   const double diff = fabs(val1 - val2);
-  if (diff <= abs_error) return AssertionSuccess();
+  if (diff <= abs_error)
+	  return AssertionSuccess(AssertionInfo(expr1, expr2, PrintToString(val1), PrintToString(val2), PrintToString(diff) + " <= " + PrintToString(abs_error)));
 
   // FIXME: do not print the value of an expression if it's
   // already a literal.
@@ -1432,13 +1433,13 @@ AssertionResult FloatingPointLE(const char* expr1,
                                 RawType val2) {
   // Returns success if val1 is less than val2,
   if (val1 < val2) {
-    return AssertionSuccess();
+	  return AssertionSuccess(AssertionInfo(expr1, expr2, PrintToString(val1), PrintToString(val2), "<"));
   }
 
   // or if val1 is almost equal to val2.
   const FloatingPoint<RawType> lhs(val1), rhs(val2);
   if (lhs.AlmostEquals(rhs)) {
-    return AssertionSuccess();
+	  return AssertionSuccess(AssertionInfo(expr1, expr2, PrintToString(val1), PrintToString(val2), "AlmostEquals"));
   }
 
   // Note that the above two checks will both fail if either val1 or
@@ -1484,7 +1485,8 @@ AssertionResult CmpHelperEQ(const char* lhs_expression,
                             BiggestInt lhs,
                             BiggestInt rhs) {
   if (lhs == rhs) {
-    return AssertionSuccess();
+    return AssertionSuccess(
+		AssertionInfo(lhs_expression, rhs_expression, PrintToString(lhs), PrintToString(rhs), "EQ"));
   }
 
   return EqFailure(lhs_expression,
@@ -1501,7 +1503,7 @@ AssertionResult CmpHelperEQ(const char* lhs_expression,
 AssertionResult CmpHelper##op_name(const char* expr1, const char* expr2, \
                                    BiggestInt val1, BiggestInt val2) {\
   if (val1 op val2) {\
-    return AssertionSuccess();\
+    return AssertionSuccess(AssertionInfo(expr1, expr2, PrintToString(val1), PrintToString(val2), #op));\
   } else {\
     return AssertionFailure() \
         << "Expected: (" << expr1 << ") " #op " (" << expr2\
@@ -1534,7 +1536,7 @@ AssertionResult CmpHelperSTREQ(const char* lhs_expression,
                                const char* lhs,
                                const char* rhs) {
   if (String::CStringEquals(lhs, rhs)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo(lhs_expression, rhs_expression, lhs, rhs, "STREQ"));
   }
 
   return EqFailure(lhs_expression,
@@ -1550,7 +1552,7 @@ AssertionResult CmpHelperSTRCASEEQ(const char* lhs_expression,
                                    const char* lhs,
                                    const char* rhs) {
   if (String::CaseInsensitiveCStringEquals(lhs, rhs)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo(lhs_expression, rhs_expression, lhs, rhs, "STRCASEEQ"));
   }
 
   return EqFailure(lhs_expression,
@@ -1566,7 +1568,7 @@ AssertionResult CmpHelperSTRNE(const char* s1_expression,
                                const char* s1,
                                const char* s2) {
   if (!String::CStringEquals(s1, s2)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo(s1_expression, s2_expression, s1, s2, "STRNE"));
   } else {
     return AssertionFailure() << "Expected: (" << s1_expression << ") != ("
                               << s2_expression << "), actual: \""
@@ -1580,7 +1582,7 @@ AssertionResult CmpHelperSTRCASENE(const char* s1_expression,
                                    const char* s1,
                                    const char* s2) {
   if (!String::CaseInsensitiveCStringEquals(s1, s2)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo(s1_expression, s2_expression, s1, s2, "STRCASENE"));
   } else {
     return AssertionFailure()
         << "Expected: (" << s1_expression << ") != ("
@@ -1630,7 +1632,8 @@ AssertionResult IsSubstringImpl(
     const char* needle_expr, const char* haystack_expr,
     const StringType& needle, const StringType& haystack) {
   if (IsSubstringPred(needle, haystack) == expected_to_be_substring)
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo(
+		needle_expr,haystack_expr,PrintToString(needle),PrintToString(haystack), expected_to_be_substring ? "SubString" : "NotSubString"));
 
   const bool is_wide_string = sizeof(needle[0]) > 1;
   const char* const begin_string_quote = is_wide_string ? "L\"" : "\"";
@@ -1748,14 +1751,14 @@ AssertionResult HRESULTFailureHelper(const char* expr,
 
 AssertionResult IsHRESULTSuccess(const char* expr, long hr) {  // NOLINT
   if (SUCCEEDED(hr)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo("SUCCEEDED()" ,expr, "0", PrintToString(hr), ">="));
   }
   return HRESULTFailureHelper(expr, "succeeds", hr);
 }
 
 AssertionResult IsHRESULTFailure(const char* expr, long hr) {  // NOLINT
   if (FAILED(hr)) {
-    return AssertionSuccess();
+    return AssertionSuccess(AssertionInfo("FAILED()" ,expr, "0", PrintToString(hr), "<"));
   }
   return HRESULTFailureHelper(expr, "fails", hr);
 }
@@ -1916,7 +1919,12 @@ AssertionResult CmpHelperSTREQ(const char* lhs_expression,
                                const wchar_t* lhs,
                                const wchar_t* rhs) {
   if (String::WideCStringEquals(lhs, rhs)) {
-    return AssertionSuccess();
+    return AssertionSuccess(
+		AssertionInfo(
+			lhs_expression,
+			rhs_expression,
+			PrintToString(lhs),
+			PrintToString(rhs),"STREQ"));
   }
 
   return EqFailure(lhs_expression,
@@ -1932,7 +1940,12 @@ AssertionResult CmpHelperSTRNE(const char* s1_expression,
                                const wchar_t* s1,
                                const wchar_t* s2) {
   if (!String::WideCStringEquals(s1, s2)) {
-    return AssertionSuccess();
+    return AssertionSuccess(
+		AssertionInfo(
+			s1_expression,
+			s2_expression,
+			PrintToString(s1),
+			PrintToString(s2),"STRNE"));
   }
 
   return AssertionFailure() << "Expected: (" << s1_expression << ") != ("
